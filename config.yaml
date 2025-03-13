@@ -1,0 +1,30 @@
+llm:
+  model: "gemini-2.0-flash-exp" # use a gemini model
+  temperature: 0.1
+  max_tokens: 1000
+
+memory:
+  type: "summary"  # Options: buffer, window, summary
+  window_k: 5  # window size for window memory
+  summary_k: 5  # max token limit for summary memory
+
+logging:
+  level: "WARNING" 
+  log_to_file: true
+  log_directory: "logs"
+
+agent:
+  max_iterations: 10
+  async_mode: true
+
+tools:
+  serpapi_num_results: 5
+  serpapi_region: "in"
+  serpapi_engine: "google"
+  serpapi_language: "en"
+
+streaming:
+  wait_time: 0.1 # seconds to wait between checking the queue for a token
+  max_wait_time: 1.0 # maximum wait time for a token
+  max_empty_count: 10 # maximum number of empty checks before giving up and end streaming
+
