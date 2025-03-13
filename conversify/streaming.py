@@ -5,6 +5,12 @@ from typing import Any, Dict, AsyncIterator, List
 
 from langchain.callbacks.base import AsyncCallbackHandler
 
+from conversify.config import load_config
+
+# Load configuration
+config = load_config()
+streaming_config = config.get("streaming", {})
+
 class QueueCallbackHandler(AsyncCallbackHandler):
     """
     Callback handler that puts tokens into a queue for streaming.
@@ -21,9 +27,14 @@ class QueueCallbackHandler(AsyncCallbackHandler):
         """
         self.queue = queue
         self.final_answer_seen = False
-        self.logger = logging.getLogger("agent.streaming")
+        self.logger = logging.getLogger("streaming")
         self.is_done = False
         self._lock = asyncio.Lock()
+        
+        # Get streaming configuration
+        self.wait_time = streaming_config.get("wait_time")
+        self.max_wait_time = streaming_config.get("max_wait_time")
+        self.max_empty_count = streaming_config.get("max_empty_count")
 
     async def __aiter__(self) -> AsyncIterator[Any]:
         """
@@ -32,16 +43,15 @@ class QueueCallbackHandler(AsyncCallbackHandler):
         Yields:
             Any: Token from the queue
         """
-        wait_time = 0.1  
-        max_wait_time = 1.0
         empty_count = 0
-        max_empty_count = 10
+        wait_time = self.wait_time
         
         while not self.is_done:
             try:
                 try:
                     token = await asyncio.wait_for(self.queue.get(), timeout=wait_time)
-                    empty_count = 0  # Reset counter when we get a token
+                    empty_count = 0  # Reset counter and wait time when we get a token
+                    wait_time = self.wait_time
                     
                     # Check for done signal
                     if token == "<<DONE>>":
@@ -59,14 +69,14 @@ class QueueCallbackHandler(AsyncCallbackHandler):
                     empty_count += 1
                     self.logger.debug(f"Queue empty for {empty_count} checks")
                     
-                    if empty_count > max_empty_count:
+                    if empty_count > self.max_empty_count:
                         self.logger.warning("Queue has been empty too long, ending stream")
                         await self.queue.put("<<DONE>>")
                         self.is_done = True
                         break
                     
                     # Increase wait time up to the max
-                    wait_time = min(wait_time * 1.5, max_wait_time)
+                    wait_time = min(wait_time * 1.5, self.max_wait_time)
                     await asyncio.sleep(0.1)  # Small sleep to prevent tight loop
                     
             except Exception as e:

@@ -1,236 +1,230 @@
-"""
-Example script demonstrating the Agent project.
-
-This script shows how to use the AgentExecutor, memory, and tools.
-"""
 import asyncio
 import os
-from typing import Dict, Any, Optional
-import logging
-import sys
-
-# Add the parent directory to sys.path
-sys.path.insert(0, os.path.abspath(".."))
+from getpass import getpass
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.language_models import BaseLanguageModel
 
-from agent_project.executor import AgentExecutor
-from agent_project.config import load_config, setup_logging
-from agent_project.tools import get_all_tools
+from conversify.config import load_config, setup_logging
+from conversify.executor import AgentExecutor
+from conversify.tools import get_all_tools
 
+# Configure logging
+logger = setup_logging()
 
-async def process_token(token: Any) -> None:
-    """
-    Process streaming tokens.
-    
-    Args:
-        token (Any): Token to process
-    """
-    try:
-        if token is None:
-            # Skip None tokens
-            return
-            
-        if hasattr(token, "content"):
-            # AIMessageChunk content
-            if token.content:
-                print(token.content, end="", flush=True)
-        elif isinstance(token, str):
-            # Plain string
-            print(token, end="", flush=True)
-        else:
-            # Any other type - print its type for debugging
-            token_type = type(token).__name__
-            print(f"[{token_type}]", end="", flush=True)
-    except Exception as e:
-        print(f"\nError processing token: {str(e)}")
-
-
-async def process_streaming_queue(queue) -> None:
-    """
-    Process all tokens from the streaming queue.
-    
-    Args:
-        queue: The queue containing streaming tokens
-    """
+async def process_streaming_tokens(queue):
+    """Process tokens from the streaming queue."""
     try:
         token_count = 0
         token_start_time = asyncio.get_event_loop().time()
-        max_wait_time = 30.0  # Maximum time to wait for new tokens in seconds
-        last_token_time = token_start_time
         
-        print("Processing streaming response...", flush=True)
+        # Get streaming settings from config
+        config = load_config()
+        streaming_config = config.get("streaming", {})
+        max_wait_time = streaming_config.get("max_wait_time", 5.0)  # Increased default
+        wait_time = streaming_config.get("wait_time", 0.5)  # Increased default
+        
+        logger.debug("Starting to process streaming tokens")
+        last_token_time = token_start_time
+        content_received = False
         
         while True:
-            # Check if we've been waiting too long for a new token
-            current_time = asyncio.get_event_loop().time()
-            if current_time - last_token_time > max_wait_time:
-                print("\n[Token stream timeout]")
-                break
-                
             try:
-                # Try to get a token with a short timeout
-                token = await asyncio.wait_for(queue.get(), timeout=1.0)
-                last_token_time = asyncio.get_event_loop().time()  # Update the last token time
+                # Use a shorter timeout for queue.get() to allow for more frequent checks
+                token = await asyncio.wait_for(queue.get(), timeout=wait_time)
+                last_token_time = asyncio.get_event_loop().time()
                 token_count += 1
                 
                 if token == "<<DONE>>":
-                    print()  # Add final newline
+                    logger.debug("Received DONE signal")
+                    if not content_received:
+                        print("\n[No content received]")
+                    else:
+                        print()  # Add newline at the end
                     break
                     
                 elif token == "<<STEP_END>>":
+                    logger.debug("Received STEP_END signal")
                     print("\n")
                     
                 else:
-                    await process_token(token)
-                    
-            except asyncio.TimeoutError:
-                # Just continue looping, the wait time check will handle actual timeouts
-                pass
+                    # Process the token based on its type
+                    if hasattr(token, "message") and hasattr(token.message, "content"):
+                        # AIMessageChunk with content
+                        content = token.message.content
+                        if content:
+                            content_received = True
+                            print(content, end="", flush=True)
+                            
+                    elif hasattr(token, "content"):
+                        # AIMessageChunk or similar
+                        if token.content:
+                            content_received = True
+                            print(token.content, end="", flush=True)
+                            
+                    elif isinstance(token, str):
+                        # Plain string token
+                        content_received = True
+                        print(token, end="", flush=True)
+                        
+                    else:
+                        # Unknown token type - log it for debugging
+                        logger.debug(f"Unknown token type: {type(token)}")
                 
+                # Reset wait time after successful token processing
+                wait_time = streaming_config.get("wait_time", 0.5)
+                
+            except asyncio.TimeoutError:
+                current_time = asyncio.get_event_loop().time()
+                time_since_last = current_time - last_token_time
+                
+                if time_since_last > max_wait_time:
+                    if not content_received:
+                        logger.warning("No content received before timeout")
+                        print("\n[No response received - please try again]")
+                    break
+                
+                # Gradually increase wait time to reduce CPU usage
+                wait_time = min(wait_time * 1.5, streaming_config.get("max_wait_time", 5.0))
+                continue
+                
+            except Exception as e:
+                logger.error(f"Error processing token: {str(e)}")
+                if not content_received:
+                    print(f"\n[Error: {str(e)}]")
+                break
+        
+        # Log completion statistics
         token_end_time = asyncio.get_event_loop().time()
         processing_time = token_end_time - token_start_time
-        print(f"\nProcessed {token_count} tokens in {processing_time:.2f} seconds")
-            
+        logger.info(f"Processed {token_count} tokens in {processing_time:.2f} seconds")
+        
     except Exception as e:
-        print(f"\nError in stream processing: {str(e)}")
+        logger.error(f"Error in token processing loop: {str(e)}")
+        print(f"\n[Error: {str(e)}]")
 
-
-async def run_streaming_example(
-    agent: AgentExecutor,
-    query: str,
-    logger: logging.Logger
-) -> None:
-    """
-    Run a streaming example.
-    
-    Args:
-        agent (AgentExecutor): Agent executor instance
-        query (str): Query to ask the agent
-        logger (logging.Logger): Logger instance
-    """
-    print(f"\n🔄 Running streaming example with query: '{query}'")
-    logger.info(f"Running streaming example with query: {query}")
+async def process_query(agent, query, query_num, total_queries):
+    """Process a single query and handle all streaming output."""
+    print(f"\n[Query {query_num}/{total_queries}]: {query}")
+    logger.info(f"Running agent with query: {query}")
     
     # Get the streaming queue
+    print("\nResponse: ", end="", flush=True)
     queue = agent.stream(query)
     
     # Process streaming tokens
-    print("\nAnswer: ", end="", flush=True)
-    start_time = asyncio.get_event_loop().time()
-    await process_streaming_queue(queue)
-    end_time = asyncio.get_event_loop().time()
+    await process_streaming_tokens(queue)
     
-    logger.info(f"Query processing took {end_time - start_time:.2f} seconds")
-    print("\n✅ Streaming complete\n")
+    # Add a clear divider after the response
+    print("\n" + "-" * 80)
+    
+    # Return True to indicate successful completion
+    return True
 
-
-async def main() -> None:
-    """Run the example script."""
-    # Set up logging
-    logger = setup_logging("INFO")
-    logger.info("Starting example script")
+async def main():
+    """Run a comprehensive test of the Conversify agent."""
+    print("\n=== Conversify Agent Test ===\n")
     
     # Load configuration
+    logger.info("Loading configuration...")
     config = load_config()
-    logger.info(f"Loaded configuration: {config}")
     
-    # Check for Google API key
+    # Get API key
     google_api_key = os.environ.get("GOOGLE_API_KEY")
-    if not google_api_key:
-        logger.error("Google API key not found in environment variables")
-        print("Error: Google API key is required.")
-        print("Please set up your .env file with your API keys as described in the README.")
-        print("Example .env file format:")
-        print("GOOGLE_API_KEY=your_google_api_key_here")
-        print("SERPAPI_KEY=your_serpapi_key_here")
-        return
     
     # Configure the language model
-    llm_config = config["llm"]
+    logger.info("Initializing language model...")
+    llm_config = config.get("llm", {})
     llm = ChatGoogleGenerativeAI(
-        model=llm_config["model"],
-        temperature=llm_config["temperature"],
-        max_tokens=llm_config["max_tokens"],
+        model=llm_config.get("model", "gemini-1.0-pro"),
+        temperature=llm_config.get("temperature", 0.1),
+        max_tokens=llm_config.get("max_tokens", 1000),
         google_api_key=google_api_key,
-        streaming=True
+        streaming=True,
+        verbose=True  # Add verbose mode to help with debugging
     )
     
-    # Get tools based on configuration
-    tools = get_all_tools()
-    
-    # Configure memory
-    memory_config = config["memory"]
-    memory_type = memory_config["type"]
-    
-    # Create the agent executor
+    # Create a more concise system prompt
+    system_prompt = """You are a helpful AI assistant that uses tools to provide accurate information. For current time/date, use current_datetime tool. For calculations, use calculator tool. For web searches or current info, use serpapi_search tool. Always format tool usage as:
+
+Thought: [reasoning]
+Action: [tool_name]
+Action Input: {"param": "value"}
+
+After getting tool response, provide:
+Final Answer: [your answer]"""
+
+    logger.info("Creating agent executor with all tools...")
+    # Create agent executor with ALL tools
     agent = AgentExecutor(
         llm=llm,
-        system_prompt="""You are a helpful AI assistant with access to various tools that allow you to perform tasks that would normally be outside your capabilities.
-
-Your job is to answer the user's questions as accurately as possible using the tools provided to you.
-
-IMPORTANT INSTRUCTIONS FOR TOOL USAGE:
-1. For questions about the current date or time, ALWAYS use the 'current_datetime' tool, not your internal knowledge.
-2. For questions about weather, recent events, or any real-world information that might be changing, ALWAYS use the 'serpapi_search' tool to search for up-to-date information.
-3. For calculations, ALWAYS use the 'calculator' tool rather than calculating internally.
-4. You have access to web search through the 'serpapi_search' tool - use it whenever you need to find information that might not be in your training data or could be outdated.
-5. Only provide a final answer after you've gathered all necessary information using the appropriate tools.
-
-TOOL USAGE EXAMPLES:
-
-Example 1: Getting current date/time
-User: What's today's date and time?
-Thought: I need to use the current_datetime tool to get the current date and time.
-Action: current_datetime
-Action Input: {"format": "%Y-%m-%d %H:%M:%S", "timezone": "local"}
-[Tool Response: 2023-03-15 14:30:45]
-Final Answer: The current date and time is March 15, 2023, 2:30:45 PM local time.
-
-Example 2: Searching for weather information
-User: What's the weather like in New York?
-Thought: I need to search for current weather information in New York.
-Action: serpapi_search
-Action Input: {"query": "current weather in New York", "num_results": 3}
-[Tool Response: Search results about weather in New York]
-Final Answer: According to current information, the weather in New York is...
-
-Example 3: Performing a calculation
-User: What is the square root of 144 plus 25?
-Thought: I need to calculate the square root of 144 and then add 25.
-Action: calculator
-Action Input: {"expression": "sqrt(144) + 25"}
-[Tool Response: Result: 37.0]
-Final Answer: The square root of 144 plus 25 is 37.
-
-Remember: Do not try to answer questions about current time, date, weather, or recent events from your internal knowledge - ALWAYS use the provided tools instead.""",
-        tools=tools,
-        memory_type=memory_type,
-        memory_window_k=memory_config.get("k", 5),
-        memory_token_limit=memory_config.get("max_token_limit", 4000),
-        log_level=config["logging"]["level"]
+        system_prompt=system_prompt,
+        tools=get_all_tools(),
     )
     
-    # Example 1: Non-streaming basic query
-    query1 = "What's 25 squared plus 10?"
-    logger.info(f"Running example 1 with query: {query1}")
-    answer1 = agent.run(query1)
-    print(f"\n❓ Query: {query1}")
-    print(f"🤖 Answer: {answer1}")
+    try:
+        # Series of queries to test different tools and conversational memory
+        queries = [
+            # Start with a math query
+            "What is the square root of 144 plus 25?",
+            
+            # Ask for current date/time
+            "What's today's date and time?",
+            
+            # Ask for weather that requires web search
+            "What's the weather like in New York?",
+            
+            # Ask for information that requires web search
+            "Tell me about quantum computing",
+            
+            # Refer back to previous answers to test conversational memory
+            "Given the information above, what's the sum of today's day of the month and the square root of 144?",
+            
+            # Test more conversational memory with self-reference
+            "When did you tell me about the weather earlier?",
+            
+            # Test combining multiple pieces of information
+            "Compare quantum computing with classical computing based on what you told me earlier"
+        ]
+        
+        # Process each query in sequence
+        for i, query in enumerate(queries):
+            query_num = i+1
+            
+            # Process the current query
+            success = await process_query(agent, query, query_num, len(queries))
+            
+            # Only prompt for continue if this isn't the last query
+            if i < len(queries) - 1:
+                print("\nPress Enter to continue to the next query... ", end="", flush=True)
+                try:
+                    user_input = input()
+                    logger.debug(f"User pressed Enter to continue to query {query_num+1}")
+                except Exception as e:
+                    logger.error(f"Error getting user input: {str(e)}")
+                    print(f"Error: {str(e)}, continuing automatically")
+        
+        # Check the memory state
+        print("\n=== Memory State ===")
+        memory_variables = agent.memory.load_memory_variables()
+        memory_messages = memory_variables.get("chat_history", [])
+        print(f"Number of messages in memory: {len(memory_messages)}")
+        
+        if len(memory_messages) > 0:
+            print("\nLast message:")
+            last_message = memory_messages[-1]
+            preview = last_message.content[:100] + "..." if len(last_message.content) > 100 else last_message.content
+            print(f"Type: {last_message.__class__.__name__}, Content: {preview}")
+            
+        print("\n=== Test Completed Successfully ===")
+        
+    except KeyboardInterrupt:
+        print("\n\nTest stopped by user.")
+    except Exception as e:
+        logger.error(f"Error in main: {str(e)}")
+        logger.error("Exception details:", exc_info=True)
+        print(f"\nError: {str(e)}")
     
-    # Example 2: Streaming query with tool usage
-    query2 = "What's the current date and time?"
-    logger.info(f"Running example 2 with query: {query2}")
-    await run_streaming_example(agent, query2, logger)
-    
-    # Example 3: Follow-up question demonstrating memory
-    query3 = "What time would it be 3 hours from now?"
-    logger.info(f"Running example 3 with query: {query3}")
-    await run_streaming_example(agent, query3, logger)
-    
-    logger.info("Example script completed successfully")
-
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Run the main function
+    asyncio.run(main()) 

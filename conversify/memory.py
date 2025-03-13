@@ -68,7 +68,7 @@ class ConversationalBufferMemory:
         """
         return self.chat_history
     
-    def load_memory_variables(self) -> Dict[str, Any]:
+    def load_memory_variables(self, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Load memory variables to be used in a prompt.
             
@@ -151,8 +151,10 @@ class ConversationalBufferWindowMemory(ConversationalBufferMemory):
 
 class ConversationalSummaryMemory(ConversationalBufferMemory):
     """
-    Conversational memory with summarization capabilities that keeps only the last k message pairs and summary of the conversation.
+    Conversational memory with summarization capabilities.
     
+    This memory implementation keeps only the last k message pairs and a summary
+    of the conversation.
     """
     
     def __init__(self, 
@@ -162,20 +164,20 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
                  input_key: Optional[str] = None, 
                  output_key: Optional[str] = None):
         """
+        Initialize the summary memory.
+        
         Args:
-            llm: LLM to use for summarization.
-            k (int): Number of message pairs (user-AI exchanges) to retain.
-            return_messages (bool): Whether to return messages or a string.
-            input_key (Optional[str]): Key to extract input from.
-            output_key (Optional[str]): Key to extract output from.
+            llm: LLM to use for summarization
+            k (int): Number of message pairs to retain
+            return_messages (bool): Whether to return messages or a string
+            input_key (Optional[str]): Key to extract input from
+            output_key (Optional[str]): Key to extract output from
         """
         super().__init__(return_messages, input_key, output_key)
         self.llm = llm
         self.k = k 
-        self.current_summary: Optional[str] = None
         
-        # Define a summary prompt template.
-        # This prompt asks the LLM to generate a new summary based on an existing summary (if any) and a conversation segment.
+        # Define a summary prompt template
         self.summary_prompt = ChatPromptTemplate.from_messages([
             ("system", """
                 You are an AI assistant tasked with summarizing a conversation history.
@@ -192,23 +194,22 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
     
     def _check_and_summarize(self) -> None:
         """
-        Check if the conversation (excluding any summary message) exceeds 2*k messages.
-        If so, drop the oldest messages and update the summary.
+        Check if the conversation exceeds 2*k messages and summarize if needed.
         """
-        # Check if a summary message exists at index 0.
+        # Check if a summary message exists at index 0
         existing_summary = None
         non_summary_messages = self.chat_history
         if self.chat_history and isinstance(self.chat_history[0], SystemMessage):
             existing_summary = self.chat_history.pop(0)
             non_summary_messages = self.chat_history 
         
-        # If number of message pairs is less than 2*k, no need to summarize.
+        # If number of message pairs is less than 2*k, no need to summarize
         if len(non_summary_messages) <= 2 * self.k:
             if existing_summary:
                 self.chat_history = [existing_summary] + non_summary_messages
             return
         
-        # Determine how many messages to drop.
+        # Determine how many messages to drop
         num_to_drop = len(non_summary_messages) - 2 * self.k
         dropped_messages = non_summary_messages[:num_to_drop]
         remaining_messages = non_summary_messages[num_to_drop:]
@@ -226,7 +227,7 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
                 "dropped_messages": dropped_str
             }
         
-        # create a new summary
+        # Create a new summary
         try:
             chain = self.summary_prompt | self.llm
             result = chain.invoke(prompt_input)
@@ -236,7 +237,7 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
         
         summary_message = SystemMessage(content=f"Summary of previous conversation: {new_summary}")
         
-        # Rebuild the chat history: summary message followed by the remaining messages.
+        # Rebuild the chat history: summary message followed by the remaining messages
         self.chat_history = [summary_message] + remaining_messages
     
     def clear(self) -> None:

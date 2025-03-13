@@ -11,6 +11,12 @@ from langchain.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 from simpleeval import SimpleEval
 
+from conversify.config import load_config
+
+# Load configuration
+config = load_config()
+tools_config = config.get("tools", {})
+
 
 class FinalAnswerInput(BaseModel):
     """Input schema for the final answer tool."""
@@ -136,10 +142,9 @@ class SearchResult:
 class SerpapiSearchInput(BaseModel):
     """Input schema for the SerpAPI search tool."""
     query: str = Field(description="The search query for SerpAPI search.")
-    num_results: int = Field(default=5, description="The number of results to return.")
 
 @tool("serpapi_search", args_schema=SerpapiSearchInput)
-def serpapi_search(query: str, num_results: int = 5) -> str:
+def serpapi_search(query: str) -> str:
     """
     Performs a web search using Google via SerpAPI and returns relevant information.
     
@@ -151,22 +156,29 @@ def serpapi_search(query: str, num_results: int = 5) -> str:
     
     The results contain titles, URLs, source, and snippets of the most relevant web pages.
     """
+    num_results = tools_config.get("serpapi_num_results", 5)
+        
     api_key = os.environ.get("SERPAPI_KEY")
     if not api_key:
         return "Error: SerpAPI key is not set."
 
     endpoint = "https://serpapi.com/search"
     params = {
-        "engine": "google",  
+        "engine": tools_config.get("serpapi_engine", "google"), 
         "q": query,
         "api_key": api_key,
-        "hl": "en",               
-        'gl': 'in',
+        "hl": tools_config.get("serpapi_language", "en"),
+        "gl": tools_config.get("serpapi_region", "us"),
     }
 
     try:
+        # Log the request being made (without API key)
+        safe_params = params.copy()
+        safe_params.pop("api_key")
+        print(f"Making SerpAPI request with params: {safe_params}")
+        
         # Make the request
-        response = requests.get(endpoint, params=params, timeout=10)  
+        response = requests.get(endpoint, params=params, timeout=10) 
         response.raise_for_status()
         data = response.json()
 
@@ -180,6 +192,7 @@ def serpapi_search(query: str, num_results: int = 5) -> str:
             if not results:
                 return f"No search results found for query: '{query}'. Try refining your search terms."
                 
+            # take the first num_results results
             for item in results[:num_results]:
                 search_result = SearchResult(
                     title=item.get("title", "No title"),

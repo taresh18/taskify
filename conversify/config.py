@@ -12,48 +12,55 @@ import yaml
 load_dotenv()
 
 # Create logs directory if it doesn't exist
-LOGS_DIR = Path("logs")
-LOGS_DIR.mkdir(exist_ok=True)
-
-# Configure logging to write to both console and file
-def setup_logging(log_level: str = "INFO") -> logging.Logger:
+def setup_logging() -> logging.Logger:
     """
     Set up logging for the agent.
-    
-    Args:
-        log_level (str): The logging level to use
     
     Returns:
         logging.Logger: The configured logger
     """
+    # Load config to get logging settings
+    config = load_config()
+    logging_config = config.get("logging")
+    
+    log_level = logging_config.get("level")
+    
+    # Create logs directory
+    log_directory = logging_config.get("log_directory")
+    logs_dir = Path(log_directory)
+    logs_dir.mkdir(exist_ok=True)
+    
     # Convert string log level to logging constant
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
     
-    # Create a logger
-    logger = logging.getLogger("agent")
-    logger.setLevel(numeric_level)
-    logger.handlers = []  # Clear any existing handlers
+    # Configure the root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_level)
     
-    # Create console handler
+    # Remove any existing handlers
+    root_logger.handlers = []
+    
+    # Create formatters
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Add console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(numeric_level)
+    console_handler.setFormatter(detailed_formatter)
+    root_logger.addHandler(console_handler)
     
-    # Create file handler
-    log_filename = "agent.log"
-    file_handler = logging.FileHandler(LOGS_DIR / log_filename)
+    # Add file handler 
+    log_file = logs_dir / "conversify.log"
+    file_handler = logging.FileHandler(log_file, mode='a')  # 'a' for append mode
     file_handler.setLevel(numeric_level)
+    file_handler.setFormatter(detailed_formatter)
+    root_logger.addHandler(file_handler)
     
-    # Create formatter and add it to the handlers
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-    
-    # Add the handlers to the logger
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-    
-    # Log a startup message to verify file logging is working
-    logger.info(f"Logging initialized with level {log_level}")
+    # Create and return the conversify logger as a child of root
+    logger = logging.getLogger("conversify")
+    logger.debug("Logging initialized with level %s to %s", log_level, log_directory)
     
     return logger
 

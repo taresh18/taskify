@@ -9,8 +9,7 @@ memory:
   summary_k: 5  # max token limit for summary memory
 
 logging:
-  level: "WARNING" 
-  log_to_file: true
+  level: "DEBUG" 
   log_directory: "logs"
 
 agent:
@@ -24,7 +23,7 @@ tools:
   serpapi_language: "en"
 
 streaming:
-  wait_time: 0.1 # seconds to wait between checking the queue for a token
-  max_wait_time: 1.0 # maximum wait time for a token
-  max_empty_count: 10 # maximum number of empty checks before giving up and end streaming
+  wait_time: 0.5  # increased from 0.1 to 0.5 seconds to wait between checking the queue for a token
+  max_wait_time: 5.0  # increased from 1.0 to 5.0 seconds maximum wait time for a token
+  max_empty_count: 20  # increased from 10 to 20 maximum number of empty checks before giving up
 

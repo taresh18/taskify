@@ -14,13 +14,19 @@ from langchain_core.messages import (
 )
 from langchain_core.prompts import ChatPromptTemplate
 
-from agent_project.config import setup_logging
-from agent_project.memory import (
+from conversify.config import setup_logging, load_config
+from conversify.memory import (
     ConversationalBufferMemory,
     ConversationalBufferWindowMemory,
     ConversationalSummaryMemory,
 )
-from agent_project.tools import get_all_tools
+from conversify.tools import get_all_tools
+from conversify.streaming import QueueCallbackHandler
+
+# Load configuration
+config = load_config()
+agent_config = config.get("agent", {})
+memory_config = config.get("memory", {})
 
 
 class AgentExecutor:
@@ -36,11 +42,6 @@ class AgentExecutor:
         llm: BaseLanguageModel,
         system_prompt: str,
         tools: Optional[List[Callable]] = None,
-        memory_type: str = "buffer",
-        memory_window_k: int = 5,
-        memory_summary_k: int = 5,
-        max_iterations: int = 10,
-        log_level: str = "INFO",
         **kwargs
     ):
         """
@@ -50,18 +51,21 @@ class AgentExecutor:
             llm (BaseLanguageModel): The language model to use
             system_prompt (str): The system prompt for the agent
             tools (Optional[List[Callable]]): The tools available to the agent
-            memory_type (str): Type of memory to use ('buffer', 'window', or 'summary')
-            memory_window_k (int): Window size for window memory
-            memory_token_limit (int): Token limit for summary memory
-            max_iterations (int): Maximum number of iterations
-            log_level (str): Logging level
             **kwargs: Additional keyword arguments
         """
         self.llm = llm
         self.system_prompt = system_prompt
         self.tools = tools or get_all_tools()
-        self.max_iterations = max_iterations
-        self.logger = setup_logging(log_level)
+        
+        # Use provided values or get from config
+        self.max_iterations = agent_config.get("max_iterations", 10)
+        self.async_mode = agent_config.get("async_mode", True)
+        self.logger = setup_logging()
+        
+        # Get memory configuration
+        memory_type = memory_config.get("type", "buffer")
+        memory_window_k = memory_config.get("window_k", 5)
+        memory_summary_k = memory_config.get("summary_k", 5)
         
         # Initialize memory based on type
         if memory_type == "window":
@@ -87,6 +91,8 @@ class AgentExecutor:
         
         # Initialize callback handlers
         self.callback_handlers = kwargs.get("callbacks", [])
+        
+        self.logger.info(f"Initialized AgentExecutor with {len(self.tools)} tools and {memory_type} memory")
     
     def _parse_tool_input(self, agent_action: AgentAction) -> Dict[str, Any]:
         """
@@ -575,7 +581,6 @@ class AgentExecutor:
         final_queue = asyncio.Queue()
         
         # Create a callback handler for streaming
-        from agent_project.streaming import QueueCallbackHandler
         streaming_handler = QueueCallbackHandler(final_queue)
         
         # Add the streaming handler to the callbacks
