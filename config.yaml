@@ -4,7 +4,7 @@ llm:
   max_tokens: 1000
 
 memory:
-  type: "buffer"  # Options: buffer, window, summary
+  type: "summary"  # Options: buffer, window, summary
   window_k: 5  # window size for window memory
   summary_k: 5  # max token limit for summary memory
 

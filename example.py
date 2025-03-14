@@ -169,7 +169,7 @@ async def process_query(agent, query, query_num, total_queries):
     logger.info(f"Running agent with query: {query}")
     
     # Reset variables for each query
-    # Define variables locally instead of using global
+    global last_processed_token
     last_displayed_tool = None
     
     # Get the streaming queue
@@ -178,7 +178,7 @@ async def process_query(agent, query, query_num, total_queries):
     # Create a fresh queue for each query
     queue = agent.stream(query)
     
-    # Process streaming tokens with clean variables
+    # Process streaming tokens
     await process_streaming_tokens(queue)
     
     # Add a clear divider after the response

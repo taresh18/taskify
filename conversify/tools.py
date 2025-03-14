@@ -26,9 +26,17 @@ class FinalAnswerInput(BaseModel):
 @tool("final_answer", args_schema=FinalAnswerInput)
 def final_answer(answer: str) -> Dict[str, str]:
     """
+    Final answer to a user's query
+    
     Use this tool ONLY when you're ready to provide the FINAL ANSWER to the user's question.
     This should be used at the end of your reasoning process, after you've gathered all necessary
     information and are ready to respond directly to the user's query.
+    
+    IMPORTANT: After performing searches or using other tools, you MUST use this tool to provide 
+    your conclusion. Do not continue searching indefinitely. If you've made multiple searches
+    on the same topic, use this tool to synthesize what you've learned and provide your best answer.
+    
+    The answer should be comprehensive and directly address the user's original question.
     """
     return {"answer": answer}
 
@@ -40,7 +48,7 @@ class CalculatorInput(BaseModel):
 @tool("calculator", args_schema=CalculatorInput)
 def calculator(expression: str) -> str:
     """
-    Safely evaluates mathematical expressions.
+    Calculator Tool: Evaluates mathematical expressions.
     
     Use this tool when you need to perform calculations such as addition, subtraction,
     multiplication, division, or using mathematical functions like sqrt(), sin(), cos(),
@@ -103,6 +111,7 @@ def current_datetime(format: str = "%Y-%m-%d %H:%M:%S", timezone: str = "local")
     Gets the current date and time in the specified format and timezone.
     
     Use this tool when you need to know the current date, time, or both.
+    IMPORTANT: DO NOT USE THIS TOOL WHEN ANSWERING USER'S QUESTIONS ABOUT WEATHER
     You can specify:
     - format: How the date/time should be displayed (default: "%Y-%m-%d %H:%M:%S")
       Common formats: "%Y-%m-%d" (date only), "%H:%M:%S" (time only), 
@@ -146,7 +155,7 @@ class SerpapiSearchInput(BaseModel):
 @tool("serpapi_search", args_schema=SerpapiSearchInput)
 def serpapi_search(query: str) -> str:
     """
-    Performs a web search using Google via SerpAPI and returns relevant information.
+    Web Search Tool: Performs a web search using Google and returns relevant information.
     
     Use this tool when you need to:
     - Find up-to-date information about current events, people, places, or topics

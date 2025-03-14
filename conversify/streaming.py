@@ -59,9 +59,9 @@ class QueueCallbackHandler(AsyncCallbackHandler):
                     break
                 
                 if token:
+                    self.logger.debug(f"Yielding token: {token}")
                     yield token
                     
-                # Ensure queue is properly marked as done
                 self.queue.task_done()
                 
             except asyncio.TimeoutError:
@@ -106,94 +106,46 @@ class QueueCallbackHandler(AsyncCallbackHandler):
         """
         try:
             # Skip empty tokens
-            if not token and not kwargs.get("chunk"):
-                self.logger.debug("Skipping empty token")
-                return
-                
-            self.logger.debug(f"Received token: {token[:10] if isinstance(token, str) and len(token) > 10 else str(token)[:20]}")
             chunk = kwargs.get("chunk")
+            if not chunk:
+                self.logger.debug("Skipping empty chunk")
+                return
+                                        
+            # Check for tool calls in different formats
+            tool_calls = None
+                    
+            # Format 2: tool_calls in message
+            if hasattr(chunk, 'message') and hasattr(chunk.message, 'tool_calls'):
+                tool_calls = chunk.message.tool_calls
+                if tool_calls:
+                    self.logger.debug(f"Found tool_calls in message: {tool_calls}")
             
-            if chunk:
-                self.logger.debug(f"Processing chunk type: {type(chunk).__name__}")
-                
-                # Check for tool calls in different formats
-                function_call = None
-                tool_calls = None
-                
-                # Format 1: function_call in message.additional_kwargs
-                if hasattr(chunk, 'message') and hasattr(chunk.message, 'additional_kwargs'):
-                    function_call = chunk.message.additional_kwargs.get("function_call")
-                    if function_call:
-                        self.logger.debug(f"Found function_call in message.additional_kwargs: {function_call}")
-                        
-                # Format 2: tool_calls in message
-                if hasattr(chunk, 'message') and hasattr(chunk.message, 'tool_calls'):
-                    tool_calls = chunk.message.tool_calls
-                    if tool_calls:
-                        self.logger.debug(f"Found tool_calls in message: {tool_calls}")
-                
-                # Format 3: function_call in additional_kwargs
-                if hasattr(chunk, 'additional_kwargs'):
-                    if not function_call:
-                        function_call = chunk.additional_kwargs.get("function_call")
-                        if function_call:
-                            self.logger.debug(f"Found function_call in additional_kwargs: {function_call}")
-                
-                # Format 4: tool_calls directly on chunk
-                if hasattr(chunk, 'tool_calls') and not tool_calls:
-                    tool_calls = chunk.tool_calls
-                    if tool_calls:
-                        self.logger.debug(f"Found tool_calls on chunk: {tool_calls}")
-                
-                # Check for final_answer in any of the formats
-                is_final_answer = False
-                
-                if function_call and isinstance(function_call, dict) and function_call.get("name") == "final_answer":
+            is_final_answer = False
+            
+            for tool_call in tool_calls:
+                if isinstance(tool_call, dict) and tool_call.get("name") == "final_answer":
                     is_final_answer = True
-                    self.logger.debug(f"Final answer function call detected: {function_call}")
+                    self.logger.debug(f"Final answer tool call detected: {tool_call}")
                     
                     # Extract and queue the final answer text
                     try:
-                        if isinstance(function_call.get("arguments"), str):
-                            args_str = function_call.get("arguments", "{}")
-                            args = json.loads(args_str)
-                            if "answer" in args:
-                                final_answer = args["answer"]
-                                self.logger.debug(f"Extracted final answer: {final_answer[:50]}...")
-                                await self.queue.put(final_answer)
+                        args = tool_call.get("args", {})
+                        if isinstance(args, str):
+                            args = json.loads(args)
+                        
+                        if "answer" in args:
+                            final_answer = args["answer"]
+                            self.logger.debug(f"Extracted final answer: {final_answer[:50]}...")
+                            await self.queue.put(final_answer)
                     except Exception as e:
-                        self.logger.error(f"Error extracting final answer: {str(e)}")
-                
-                elif tool_calls:
-                    for tool_call in tool_calls:
-                        if isinstance(tool_call, dict) and tool_call.get("name") == "final_answer":
-                            is_final_answer = True
-                            self.logger.debug(f"Final answer tool call detected: {tool_call}")
-                            
-                            # Extract and queue the final answer text
-                            try:
-                                args = tool_call.get("args", {})
-                                if isinstance(args, str):
-                                    args = json.loads(args)
-                                
-                                if "answer" in args:
-                                    final_answer = args["answer"]
-                                    self.logger.debug(f"Extracted final answer: {final_answer[:50]}...")
-                                    await self.queue.put(final_answer)
-                            except Exception as e:
-                                self.logger.error(f"Error extracting final answer from tool call: {str(e)}")
-                
-                if is_final_answer:
-                    async with self._lock:
-                        self.final_answer_seen = True
-                
-                # Put the chunk in the queue
-                await self.queue.put(chunk)
-                
-            # If no chunk but we have a token string
-            elif token:
-                self.logger.debug(f"Received plain token: {token[:10] if len(token) > 10 else token}...")
-                await self.queue.put(token)
+                        self.logger.error(f"Error extracting final answer from tool call: {str(e)}")
+            
+            if is_final_answer:
+                async with self._lock:
+                    self.final_answer_seen = True
+            
+            # Put the chunk in the queue
+            await self.queue.put(chunk)
                 
         except Exception as e:
             self.logger.error(f"Error in on_llm_new_token: {str(e)}")
@@ -233,16 +185,19 @@ class QueueCallbackHandler(AsyncCallbackHandler):
         Reset the handler state for a new query.
         This helps prevent carrying over state between queries.
         """
+        self.logger.debug("Resetting streaming handler state")
         async with self._lock:
             self.final_answer_seen = False
             self.is_done = False
             
             # Clear any pending tokens in the queue
+            queue_items_cleared = 0
             try:
                 while not self.queue.empty():
                     await self.queue.get()
                     self.queue.task_done()
+                    queue_items_cleared += 1
             except Exception as e:
                 self.logger.error(f"Error clearing queue during reset: {str(e)}")
                 
-        self.logger.debug("Streaming handler has been reset") 
+            self.logger.debug(f"Streaming handler has been reset, cleared {queue_items_cleared} items from queue") 

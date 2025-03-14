@@ -15,19 +15,16 @@ class ConversationalBufferMemory:
     """
     
     def __init__(self, 
-                 return_messages: bool = True, 
                  input_key: Optional[str] = None, 
                  output_key: Optional[str] = None):
         """
         Initialize the buffer memory.
         
         Args:
-            return_messages (bool): Whether to return messages or a string
             input_key (Optional[str]): Key to extract input from
             output_key (Optional[str]): Key to extract output from
         """
         self.chat_history: List[BaseMessage] = []
-        self.return_messages = return_messages
         self.input_key = input_key or "input"
         self.output_key = output_key or "output"
     
@@ -71,18 +68,6 @@ class ConversationalBufferMemory:
         """
         return self.chat_history
     
-    def load_memory_variables(self, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Load memory variables to be used in a prompt.
-            
-        Returns:
-            Dict[str, Any]: Memory variables
-        """
-        if self.return_messages:
-            return {"chat_history": self.chat_history}
-        else:
-            return {"chat_history": self._messages_to_string(self.chat_history)}
-    
     def _messages_to_string(self, messages: List[BaseMessage]) -> str:
         """
         Convert messages to a string representation.
@@ -122,7 +107,7 @@ class ConversationalBufferWindowMemory(ConversationalBufferMemory):
             input_key (Optional[str]): Key to extract input from
             output_key (Optional[str]): Key to extract output from
         """
-        super().__init__(memory_config.get("return_messages"), input_key, output_key)
+        super().__init__(input_key, output_key)
         self.k = memory_config.get("window_k")
     
     def add_message(self, message: BaseMessage) -> None:
@@ -166,12 +151,10 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
         
         Args:
             llm: LLM to use for summarization
-            k (int): Number of message pairs to retain
-            return_messages (bool): Whether to return messages or a string
             input_key (Optional[str]): Key to extract input from
             output_key (Optional[str]): Key to extract output from
         """
-        super().__init__(memory_config.get("return_messages"), input_key, output_key)
+        super().__init__(input_key, output_key)
         self.llm = llm
         self.k = memory_config.get("summary_k")
         
