@@ -1,12 +1,8 @@
 import asyncio
-import os
-from getpass import getpass
-
-from langchain_google_genai import ChatGoogleGenerativeAI
+import json
 
 from conversify.config import load_config, setup_logging
 from conversify.executor import AgentExecutor
-from conversify.tools import get_all_tools
 
 # Configure logging
 logger = setup_logging()
@@ -20,12 +16,14 @@ async def process_streaming_tokens(queue):
         # Get streaming settings from config
         config = load_config()
         streaming_config = config.get("streaming", {})
-        max_wait_time = streaming_config.get("max_wait_time", 5.0)  # Increased default
-        wait_time = streaming_config.get("wait_time", 0.5)  # Increased default
+        max_wait_time = streaming_config.get("max_wait_time", 5.0)
+        wait_time = streaming_config.get("wait_time", 0.5)
         
         logger.debug("Starting to process streaming tokens")
         last_token_time = token_start_time
         content_received = False
+        tool_output_displayed = False
+        last_displayed_tool = None
         
         while True:
             try:
@@ -45,33 +43,96 @@ async def process_streaming_tokens(queue):
                 elif token == "<<STEP_END>>":
                     logger.debug("Received STEP_END signal")
                     print("\n")
+                    tool_output_displayed = False  # Reset for next step
                     
                 else:
                     # Process the token based on its type
-                    if hasattr(token, "message") and hasattr(token.message, "content"):
-                        # AIMessageChunk with content
-                        content = token.message.content
-                        if content:
-                            content_received = True
-                            print(content, end="", flush=True)
-                            
-                    elif hasattr(token, "content"):
-                        # AIMessageChunk or similar
-                        if token.content:
-                            content_received = True
-                            print(token.content, end="", flush=True)
-                            
-                    elif isinstance(token, str):
+                    if isinstance(token, str):
                         # Plain string token
                         content_received = True
                         print(token, end="", flush=True)
+                    elif hasattr(token, "content") and token.content:
+                        # Message with content attribute
+                        content_received = True
+                        print(token.content, end="", flush=True)
+                    elif hasattr(token, "message") and hasattr(token.message, "content"):
+                        # For ChatGenerationChunk objects
+                        content_received = True
+                        if token.message.content:
+                            print(token.message.content, end="", flush=True)
+                            
+                        # Check for tool calls in message
+                        if hasattr(token.message, "tool_calls") and token.message.tool_calls:
+                            tool_call = token.message.tool_calls[0]
+                            tool_name = tool_call.get("name", "unknown_tool")
+                            
+                            # Only display tool call once per tool
+                            if last_displayed_tool != tool_name:
+                                print(f"\n[Using tool: {tool_name}]", end="", flush=True)
+                                
+                                # For calculator, also show the expression
+                                if tool_name == "calculator" and "expression" in tool_call.get("args", {}):
+                                    expression = tool_call["args"]["expression"]
+                                    print(f" Calculating: {expression}", end="", flush=True)
+                                    
+                                last_displayed_tool = tool_name
+                            
+                        # Check for function calls in additional_kwargs
+                        elif hasattr(token.message, "additional_kwargs") and token.message.additional_kwargs.get("function_call"):
+                            function_call = token.message.additional_kwargs.get("function_call")
+                            tool_name = function_call.get("name", "unknown_function")
+                            
+                            # Only display tool call once per tool
+                            if last_displayed_tool != tool_name:
+                                print(f"\n[Using tool: {tool_name}]", end="", flush=True)
+                                
+                                # For calculator, also show the expression
+                                if tool_name == "calculator" and function_call.get("arguments"):
+                                    try:
+                                        args = json.loads(function_call.get("arguments", "{}"))
+                                        if "expression" in args:
+                                            print(f" Calculating: {args['expression']}", end="", flush=True)
+                                    except:
+                                        pass
+                                    
+                                last_displayed_tool = tool_name
+                    elif hasattr(token, "additional_kwargs") and token.additional_kwargs.get("function_call"):
+                        # Handle function call
+                        function_call = token.additional_kwargs.get("function_call")
+                        tool_name = function_call.get("name", "unknown_function")
+                        content_received = True
                         
+                        # Only display tool call once per tool
+                        if last_displayed_tool != tool_name:
+                            print(f"\n[Using tool: {tool_name}]", end="", flush=True)
+                            last_displayed_tool = tool_name
+                    elif hasattr(token, "tool_calls") and token.tool_calls:
+                        # Handle tool calls
+                        content_received = True
+                        tool_name = token.tool_calls[0].get("name", "unknown_tool")
+                        
+                        # Only display tool call once per tool
+                        if last_displayed_tool != tool_name:
+                            print(f"\n[Using tool: {tool_name}]", end="", flush=True)
+                            last_displayed_tool = tool_name
+                    # Special handling for ToolMessage content
+                    elif hasattr(token, "type") and token.type == "tool":
+                        content_received = True
+                        if not tool_output_displayed:
+                            print(f"\n[Tool Result: {token.content}]", end="\n", flush=True)
+                            tool_output_displayed = True
                     else:
                         # Unknown token type - log it for debugging
                         logger.debug(f"Unknown token type: {type(token)}")
+                        # Try to extract any useful information from the token
+                        if hasattr(token, "__dict__"):
+                            logger.debug(f"Token attributes: {str(token.__dict__)[:200]}")
                 
                 # Reset wait time after successful token processing
                 wait_time = streaming_config.get("wait_time", 0.5)
+                
+                # Mark queue task as done
+                queue.task_done()
                 
             except asyncio.TimeoutError:
                 current_time = asyncio.get_event_loop().time()
@@ -107,11 +168,17 @@ async def process_query(agent, query, query_num, total_queries):
     print(f"\n[Query {query_num}/{total_queries}]: {query}")
     logger.info(f"Running agent with query: {query}")
     
+    # Reset variables for each query
+    # Define variables locally instead of using global
+    last_displayed_tool = None
+    
     # Get the streaming queue
     print("\nResponse: ", end="", flush=True)
+    
+    # Create a fresh queue for each query
     queue = agent.stream(query)
     
-    # Process streaming tokens
+    # Process streaming tokens with clean variables
     await process_streaming_tokens(queue)
     
     # Add a clear divider after the response
@@ -121,48 +188,19 @@ async def process_query(agent, query, query_num, total_queries):
     return True
 
 async def main():
-    """Run a comprehensive test of the Conversify agent."""
-    print("\n=== Conversify Agent Test ===\n")
+    """Run a demonstration of the Conversify agent."""
+    print("\n=== Conversify Agent Demonstration ===\n")
     
     # Load configuration
     logger.info("Loading configuration...")
     config = load_config()
-    
-    # Get API key
-    google_api_key = os.environ.get("GOOGLE_API_KEY")
-    
-    # Configure the language model
-    logger.info("Initializing language model...")
-    llm_config = config.get("llm", {})
-    llm = ChatGoogleGenerativeAI(
-        model=llm_config.get("model", "gemini-1.0-pro"),
-        temperature=llm_config.get("temperature", 0.1),
-        max_tokens=llm_config.get("max_tokens", 1000),
-        google_api_key=google_api_key,
-        streaming=True,
-        verbose=True  # Add verbose mode to help with debugging
-    )
-    
-    # Create a more concise system prompt
-    system_prompt = """You are a helpful AI assistant that uses tools to provide accurate information. For current time/date, use current_datetime tool. For calculations, use calculator tool. For web searches or current info, use serpapi_search tool. Always format tool usage as:
 
-Thought: [reasoning]
-Action: [tool_name]
-Action Input: {"param": "value"}
-
-After getting tool response, provide:
-Final Answer: [your answer]"""
-
-    logger.info("Creating agent executor with all tools...")
-    # Create agent executor with ALL tools
-    agent = AgentExecutor(
-        llm=llm,
-        system_prompt=system_prompt,
-        tools=get_all_tools(),
-    )
+    logger.info("Creating agent executor...")
+    # Create agent executor
+    agent = AgentExecutor()
     
     try:
-        # Series of queries to test different tools and conversational memory
+        # Define test queries to demonstrate different capabilities
         queries = [
             # Start with a math query
             "What is the square root of 144 plus 25?",
@@ -203,22 +241,10 @@ Final Answer: [your answer]"""
                     logger.error(f"Error getting user input: {str(e)}")
                     print(f"Error: {str(e)}, continuing automatically")
         
-        # Check the memory state
-        print("\n=== Memory State ===")
-        memory_variables = agent.memory.load_memory_variables()
-        memory_messages = memory_variables.get("chat_history", [])
-        print(f"Number of messages in memory: {len(memory_messages)}")
-        
-        if len(memory_messages) > 0:
-            print("\nLast message:")
-            last_message = memory_messages[-1]
-            preview = last_message.content[:100] + "..." if len(last_message.content) > 100 else last_message.content
-            print(f"Type: {last_message.__class__.__name__}, Content: {preview}")
-            
-        print("\n=== Test Completed Successfully ===")
+        print("\n=== Demonstration Completed Successfully ===")
         
     except KeyboardInterrupt:
-        print("\n\nTest stopped by user.")
+        print("\n\nDemonstration stopped by user.")
     except Exception as e:
         logger.error(f"Error in main: {str(e)}")
         logger.error("Exception details:", exc_info=True)

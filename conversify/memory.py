@@ -1,8 +1,11 @@
 from typing import List, Dict, Any, Optional
 
+from conversify.config import load_config
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 
+config = load_config()
+memory_config = config.get("memory", {})
 
 class ConversationalBufferMemory:
     """
@@ -109,8 +112,6 @@ class ConversationalBufferWindowMemory(ConversationalBufferMemory):
     """
     
     def __init__(self, 
-                 k: int = 5,
-                 return_messages: bool = True, 
                  input_key: Optional[str] = None, 
                  output_key: Optional[str] = None):
         """
@@ -118,12 +119,11 @@ class ConversationalBufferWindowMemory(ConversationalBufferMemory):
         
         Args:
             k (int): Window size (number of exchanges to keep)
-            return_messages (bool): Whether to return messages or a string
             input_key (Optional[str]): Key to extract input from
             output_key (Optional[str]): Key to extract output from
         """
-        super().__init__(return_messages, input_key, output_key)
-        self.k = k
+        super().__init__(memory_config.get("return_messages"), input_key, output_key)
+        self.k = memory_config.get("window_k")
     
     def add_message(self, message: BaseMessage) -> None:
         """
@@ -159,8 +159,6 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
     
     def __init__(self, 
                  llm,
-                 k: int = 5,
-                 return_messages: bool = True, 
                  input_key: Optional[str] = None, 
                  output_key: Optional[str] = None):
         """
@@ -173,9 +171,9 @@ class ConversationalSummaryMemory(ConversationalBufferMemory):
             input_key (Optional[str]): Key to extract input from
             output_key (Optional[str]): Key to extract output from
         """
-        super().__init__(return_messages, input_key, output_key)
+        super().__init__(memory_config.get("return_messages"), input_key, output_key)
         self.llm = llm
-        self.k = k 
+        self.k = memory_config.get("summary_k")
         
         # Define a summary prompt template
         self.summary_prompt = ChatPromptTemplate.from_messages([
