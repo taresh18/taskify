@@ -8,7 +8,7 @@ import requests
 import math
 
 from langchain.tools import BaseTool, tool
-from pydantic import BaseModel, Field
+from pydantic.v1 import BaseModel, Field
 from simpleeval import SimpleEval
 
 from conversify.config import load_config
