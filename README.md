@@ -1,6 +1,6 @@
 # Conversify
 
-A flexible framework for building autonomous conversational agents with LangChain.
+AI chatbot with functionalities such as tool usage, conversational memory, streaming, RAG etc. built using LangChain.
 
 ## Project Structure
 
