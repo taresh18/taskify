@@ -52,14 +52,14 @@ def setup_logging() -> logging.Logger:
     root_logger.addHandler(console_handler)
     
     # Add file handler 
-    log_file = logs_dir / "conversify.log"
+    log_file = logs_dir / "taskify.log"
     file_handler = logging.FileHandler(log_file, mode='a')  # 'a' for append mode
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(detailed_formatter)
     root_logger.addHandler(file_handler)
     
-    # Create and return the conversify logger as a child of root
-    logger = logging.getLogger("conversify")
+    # Create and return the taskify logger as a child of root
+    logger = logging.getLogger("taskify")
     logger.debug("Logging initialized with level %s to %s", log_level, log_directory)
     
     return logger

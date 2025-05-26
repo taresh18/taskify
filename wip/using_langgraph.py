@@ -32,7 +32,7 @@ dotenv.load_dotenv()
 
 # Set up logging
 LOG_CONFIG = {
-    "log_file": "conversify.log",
+    "log_file": "taskify.log",
     "level": logging.INFO,
     "format": "%(asctime)s - %(levelname)s - %(message)s"
 }
@@ -43,7 +43,7 @@ logging.basicConfig(
     level=LOG_CONFIG["level"],
     format=LOG_CONFIG["format"]
 )
-logger = logging.getLogger("conversify")
+logger = logging.getLogger("taskify")
 
 # Add console handler to see logs in console as well
 console_handler = logging.StreamHandler()
@@ -260,7 +260,7 @@ def initialize_llm() -> ChatGoogleGenerativeAI:
 
 def create_system_prompt() -> str:
     """Create the system prompt for the agent."""
-    return """You are Conversify, a smart chatbot agent with access to multiple tools.
+    return """You are Taskify, a smart chatbot agent with access to multiple tools.
 Given the user's query you must decide what to do with it based on the
 list of tools provided to you.
 
@@ -645,10 +645,10 @@ runnable = graph.compile()
 
 # Example usage
 if __name__ == "__main__":
-    logger.info("Starting Conversify AI Agent")
+    logger.info("Starting Taskify AI Agent")
     
     # Interactive mode
-    print("\n🤖 Welcome to Conversify AI Agent 🤖")
+    print("\n🤖 Welcome to Taskify AI Agent 🤖")
     print("Type 'exit', 'quit', or 'q' to end the conversation")
     
     # Initialize chat history - will contain only user queries and agent final answers
@@ -660,13 +660,13 @@ if __name__ == "__main__":
         
         # Check for exit commands
         if user_query.lower() in ['exit', 'quit', 'q']:
-            print("Thank you for using Conversify. Goodbye!")
+            print("Thank you for using Taskify. Goodbye!")
             break
         
         # Process the query
         try:
             answer, chat_history = run_with_query(user_query, chat_history)
-            # print("\n🤖 Conversify: ", answer)
+            # print("\n🤖 Taskify: ", answer)
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}", exc_info=True)
             print(f"\n❌ Sorry, an error occurred: {str(e)}")

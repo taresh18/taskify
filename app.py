@@ -3,8 +3,8 @@ import json
 
 import uvicorn
 
-from conversify.executor import AgentExecutor
-from conversify.streaming import QueueCallbackHandler
+from taskify.executor import AgentExecutor
+from taskify.streaming import QueueCallbackHandler
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware

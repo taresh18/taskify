@@ -5,7 +5,7 @@ from typing import Any, Dict, AsyncIterator, List
 
 from langchain.callbacks.base import AsyncCallbackHandler
 
-from conversify.config import load_config
+from taskify.config import load_config
 
 # Load configuration
 config = load_config()

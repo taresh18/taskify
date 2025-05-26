@@ -11,7 +11,7 @@ from langchain.tools import BaseTool, tool
 from pydantic.v1 import BaseModel, Field
 from simpleeval import SimpleEval
 
-from conversify.config import load_config
+from taskify.config import load_config
 
 # Load configuration
 config = load_config()

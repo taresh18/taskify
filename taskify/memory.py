@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 
-from conversify.config import load_config
+from taskify.config import load_config
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 

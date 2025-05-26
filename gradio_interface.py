@@ -66,9 +66,9 @@ def process_query(message, history):
 
 def create_interface():
     """Create the Gradio interface."""
-    with gr.Blocks(title="Conversify Agent", theme=gr.themes.Soft()) as app:
-        gr.Markdown("# 🤖 Conversify Agent")
-        gr.Markdown("Ask questions and get answers from the Conversify AI agent.")
+    with gr.Blocks(title="Taskify Agent", theme=gr.themes.Soft()) as app:
+        gr.Markdown("# 🤖 Taskify Agent")
+        gr.Markdown("Ask questions and get answers from the Taskify AI agent.")
         
         chatbot = gr.Chatbot(
             label="Conversation",

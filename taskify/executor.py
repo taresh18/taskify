@@ -12,14 +12,14 @@ from langchain_core.messages import (
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from conversify.config import setup_logging, load_config
-from conversify.memory import (
-    ConversationalBufferMemory,
-    ConversationalBufferWindowMemory,
-    ConversationalSummaryMemory,
+from taskify.config import setup_logging, load_config
+from taskify.memory import (
+    ConversationBufferMemory,
+    ConversationSummaryMemory,
+    get_memory,
 )
-from conversify.tools import get_all_tools
-from conversify.streaming import QueueCallbackHandler
+from taskify.tools import get_all_tools
+from taskify.streaming import QueueCallbackHandler
 
 # Load configuration
 config = load_config()
@@ -58,7 +58,7 @@ class AgentExecutor:
         )
 
         self.system_prompt = (
-            "You are a helpful AI assistant with access to various tools that allow you to perform tasks that would normally be outside your capabilities. "
+            "You are Taskify - a helpful AI assistant with access to various tools that allow you to perform tasks that would normally be outside your capabilities. "
             "Your job is to answer the user's questions as accurately as possible using the tools provided to you.\n\n"
             "IMPORTANT INSTRUCTIONS:\n"
             "1. Make your searches as SPECIFIC and TARGETED as possible. Prefer ONE comprehensive search over multiple narrow searches.\n"

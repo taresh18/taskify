@@ -1,8 +1,8 @@
 import asyncio
 import json
 
-from conversify.config import load_config, setup_logging
-from conversify.executor import AgentExecutor
+from taskify.config import load_config, setup_logging
+from taskify.executor import AgentExecutor
 
 # Configure logging
 logger = setup_logging()
@@ -188,8 +188,8 @@ async def process_query(agent, query, query_num, total_queries):
     return True
 
 async def main():
-    """Run a demonstration of the Conversify agent."""
-    print("\n=== Conversify Agent Demonstration ===\n")
+    """Run a demonstration of the Taskify agent."""
+    print("\n=== Taskify Agent Demonstration ===\n")
     
     # Load configuration
     logger.info("Loading configuration...")
