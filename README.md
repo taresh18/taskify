@@ -1,4 +1,4 @@
-# Conversify
+# Taskify
 
 AI chatbot with functionalities such as tool usage, conversational memory, streaming, RAG etc. built using LangChain.
 
@@ -8,7 +8,7 @@ The project has a simplified structure with all core functionality in a single d
 
 ```
 .
-├── conversify/            # Main package directory
+├── taskify/              # Main package directory
 │   ├── __init__.py       # Package initialization and exports
 │   ├── config.py         # Configuration loading and logging setup
 │   ├── executor.py       # AgentExecutor for running agents
